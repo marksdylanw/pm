@@ -49,19 +49,27 @@ PM_BASE_URL=http://localhost:8000 pytest tests/test_integration.py  # Integratio
 ## Architecture
 
 **Frontend (`frontend/src/`):**
-- `app/page.tsx` - Main page with login and Kanban board
-- `components/KanbanBoard.tsx` - Board state owner, drag-and-drop handling
-- `components/ChatSidebar.tsx` - AI chat interface
-- `lib/api.ts` - API client functions
-- `lib/kanban.ts` - Data types (Card, Column, BoardData) and utilities
+- `app/page.tsx` - Main page: login screen, loads board from `/api/board` after sign-in, owns chat history
+- `components/KanbanBoard.tsx` - Board state owner, drag-and-drop handling (DndContext + DragOverlay)
+- `components/KanbanColumn.tsx` / `KanbanCard.tsx` / `KanbanCardPreview.tsx` / `NewCardForm.tsx` - Column/card rendering, inline edit forms, drag overlay preview
+- `components/ChatSidebar.tsx` - AI chat interface; applies board updates returned by the AI immediately
+- `lib/api.ts` - API client functions (fetchBoard, createCard, updateCard, deleteCard, updateColumn, sendChat); sends `X-User` header
+- `lib/kanban.ts` - Data types (Card, Column, BoardData), `moveCard`/`findCardLocation`, and the `toColumnId`/`toCardId`/`fromColumnId`/`fromCardId` prefix helpers
+- Full details in `frontend/AGENTS.md`.
 
-**Backend (`backend/app/main.py`):**
-- Single file containing all routes, database setup, and AI integration
-- SQLite tables: users, boards, columns, cards
-- Key routes: `/api/board` (GET), `/api/columns/{id}` (CRUD), `/api/cards/{id}` (CRUD), `/api/chat` (AI)
-- Frontend static files served from `/` in production
+**Backend (`backend/app/`):** modular FastAPI app (see `backend/AGENTS.md` for the full layout)
+- `main.py` - App instance, lifespan, route registration
+- `config.py` - Environment config, constants, seed data
+- `models.py` - Pydantic request/response models
+- `database.py` - SQLite connection, init, queries (tables: users, boards, columns, cards)
+- `ai.py` - OpenRouter integration and AI action application
+- `dependencies.py` - FastAPI dependencies (`get_db`, `get_username`)
+- `routes/board.py`, `routes/chat.py`, `routes/static.py` - Board/column/card CRUD, AI chat, and static frontend serving
+- Key routes: `/api/board` (GET), `/api/columns/{id}` (CRUD), `/api/cards/{id}` (CRUD), `/api/chat` (AI), `/` (serves built frontend)
 
 **ID Prefixing:** Frontend prefixes IDs with `col-` and `card-` for drag-and-drop stability, strips them for API calls.
+
+Root `AGENTS.md` (and the per-directory `frontend/AGENTS.md`, `backend/AGENTS.md`, `scripts/AGENTS.md`) hold the authoritative, more detailed architecture notes — check them when this section and the code disagree.
 
 ## Color Scheme
 - Accent Yellow: `#ecad0a`

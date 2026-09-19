@@ -30,10 +30,12 @@ app/
 - GET /health: JSON status
 - GET /api/hello: JSON example endpoint
 - GET /api/board: Fetch user's board
-- POST/PATCH/DELETE /api/columns/{id}: Column CRUD
+- POST/PATCH/DELETE /api/columns/{id}: Column CRUD (create/delete are unused by the UI and AI action schema today — columns are product-fixed/rename-only; kept as intentional API surface)
 - POST/PATCH/DELETE /api/cards/{id}: Card CRUD
 - POST /api/chat: AI chat with structured output
 - GET /: Serves frontend or fallback HTML
+
+CORS is enabled (see app/main.py) for http://localhost:3000 so `npm run dev` can call this backend directly during local development. Production doesn't need it since the backend serves the built frontend from the same origin.
 
 ## Tests
 - Unit tests: tests/test_main.py, test_board_api.py, test_chat_api.py, test_ai_actions.py

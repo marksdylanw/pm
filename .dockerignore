@@ -5,5 +5,9 @@ frontend/.next
 frontend/test-results
 backend/.pytest_cache
 backend/__pycache__
+backend/.venv
+**/.venv
+backend/data
+backend/tests
 **/__pycache__
 **/*.pyc

@@ -129,6 +129,21 @@ export default function Home() {
     }
   };
 
+  const handleEditCard = async (cardId: string, title: string, details: string) => {
+    const cardIdNumber = Number(fromCardId(cardId));
+    if (Number.isNaN(cardIdNumber)) {
+      setBoardError("Unable to save card changes.");
+      return;
+    }
+    try {
+      await updateCard(cardIdNumber, { title, details }, username);
+    } catch (err) {
+      if (process.env.NODE_ENV === "development") console.error(err);
+      setBoardError("Unable to save card changes.");
+      refreshBoard();
+    }
+  };
+
   const handleDeleteCard = async (columnId: string, cardId: string) => {
     const cardIdNumber = Number(fromCardId(cardId));
     if (Number.isNaN(cardIdNumber)) {
@@ -320,6 +335,7 @@ export default function Home() {
         onLogout={handleLogout}
         onRenameColumn={handleRenameColumn}
         onAddCard={handleAddCard}
+        onEditCard={handleEditCard}
         onDeleteCard={handleDeleteCard}
         onMoveCard={handleMoveCard}
         sidebar={(

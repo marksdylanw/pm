@@ -92,4 +92,50 @@ describe("Home page", () => {
         expect(await screen.findByText("AI created")).toBeInTheDocument();
         vi.restoreAllMocks();
     });
+
+    it("saves card edits through the API", async () => {
+        const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+            const url = String(input);
+            if (url.includes("/api/board")) {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => mockBoardWithCard,
+                    text: async () => "",
+                } as Response;
+            }
+            if (url.includes("/api/cards/9") && init?.method === "PATCH") {
+                return {
+                    ok: true,
+                    status: 200,
+                    json: async () => ({}),
+                    text: async () => "",
+                } as Response;
+            }
+            return {
+                ok: false,
+                status: 500,
+                text: async () => "Unexpected",
+            } as Response;
+        });
+
+        render(<Home />);
+        await userEvent.type(screen.getByPlaceholderText("user"), "user");
+        await userEvent.type(screen.getByPlaceholderText("password"), "password");
+        await userEvent.click(screen.getByRole("button", { name: /sign in/i }));
+
+        expect(await screen.findByText("AI created")).toBeInTheDocument();
+        await userEvent.click(screen.getByRole("button", { name: /edit ai created/i }));
+        const titleInput = screen.getByLabelText("Card title");
+        await userEvent.clear(titleInput);
+        await userEvent.type(titleInput, "Edited in UI");
+        await userEvent.click(screen.getByRole("button", { name: /^save$/i }));
+
+        expect(await screen.findByText("Edited in UI")).toBeInTheDocument();
+        expect(fetchMock).toHaveBeenCalledWith(
+            "/api/cards/9",
+            expect.objectContaining({ method: "PATCH" })
+        );
+        vi.restoreAllMocks();
+    });
 });

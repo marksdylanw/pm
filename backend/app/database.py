@@ -1,5 +1,5 @@
 import sqlite3
-from typing import Generator, Iterable, Literal
+from typing import Iterable, Literal
 
 from app.config import DEFAULT_BOARD_TITLE, INITIAL_COLUMNS, get_db_path
 
@@ -73,14 +73,6 @@ def init_db() -> None:
     conn.execute("CREATE INDEX IF NOT EXISTS idx_cards_column_id ON cards(column_id)")
     conn.commit()
     conn.close()
-
-
-def get_db() -> Generator[sqlite3.Connection, None, None]:
-    conn = connect_db()
-    try:
-        yield conn
-    finally:
-        conn.close()
 
 
 def get_or_create_user(conn: sqlite3.Connection, username: str) -> int:
@@ -184,6 +176,12 @@ def fetch_board(conn: sqlite3.Connection, user_id: int) -> dict:
 
 def ordered_ids(rows: Iterable[sqlite3.Row]) -> list[int]:
     return [int(row["id"]) for row in rows]
+
+
+def clamp_position(position: int | None, upper_bound: int) -> int:
+    if position is None or position > upper_bound:
+        return upper_bound
+    return max(position, 0)
 
 
 def resequence_positions(

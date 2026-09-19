@@ -30,7 +30,9 @@ For the MVP, this will run locally (in a docker container)
 
 ## Starting Point
 
-A working MVP of the frontend has been built and is already in frontend. This is not yet designed for the Docker setup. It's a pure frontend-only demo.
+The MVP described in this file is implemented. FastAPI serves the built Next.js frontend from Docker, SQLite persists one board per user, login is hardcoded to `user` / `password`, and the AI sidebar can create, edit, and move cards via OpenRouter.
+
+Frontend architecture lives in `frontend/AGENTS.md`. Backend layout lives in `backend/AGENTS.md`. Start/stop scripts are documented in `scripts/AGENTS.md`.
 
 ## Color Scheme
 

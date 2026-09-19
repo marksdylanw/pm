@@ -3,6 +3,7 @@ import sqlite3
 
 import httpx
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.config import (
     OPENROUTER_BASE_URL,
@@ -10,7 +11,7 @@ from app.config import (
     OPENROUTER_TEMPERATURE,
     get_openrouter_api_key,
 )
-from app.database import get_or_create_board, ordered_ids, resequence_positions
+from app.database import clamp_position, get_or_create_board, ordered_ids, resequence_positions
 from app.models import (
     ChatHistoryItem,
     CreateCardAction,
@@ -38,7 +39,10 @@ def parse_structured_output(content: str) -> StructuredChatOutput:
                 ) from inner_exc
         else:
             raise HTTPException(status_code=502, detail="OpenRouter returned invalid JSON") from exc
-    return StructuredChatOutput.model_validate(data)
+    try:
+        return StructuredChatOutput.model_validate(data)
+    except ValidationError as exc:
+        raise HTTPException(status_code=502, detail="OpenRouter returned invalid JSON") from exc
 
 
 def call_openrouter(messages: list[dict[str, str]]) -> tuple[str, str | None]:
@@ -131,33 +135,45 @@ def apply_actions(
     board_id = get_or_create_board(conn, user_id)
 
     for action in actions:
+        # The model can hallucinate non-numeric ids (e.g. echo back a
+        # frontend-style "card-3" instead of "3"); skip the action instead of
+        # raising an unhandled 500.
+        try:
+            if isinstance(action, CreateCardAction):
+                column_id = int(action.columnId)
+            elif isinstance(action, (UpdateCardAction, DeleteCardAction)):
+                card_id = int(action.cardId)
+            elif isinstance(action, MoveCardAction):
+                card_id = int(action.cardId)
+                target_column_id = int(action.columnId)
+            else:
+                continue
+        except (TypeError, ValueError):
+            continue
+
         if isinstance(action, CreateCardAction):
             column = conn.execute(
                 "SELECT id FROM columns WHERE id = ? AND board_id = ?",
-                (int(action.columnId), board_id),
+                (column_id, board_id),
             ).fetchone()
             if not column:
                 continue
 
             cards = conn.execute(
                 "SELECT id FROM cards WHERE column_id = ? AND archived = 0 ORDER BY position",
-                (int(action.columnId),),
+                (column_id,),
             ).fetchall()
             ids = ordered_ids(cards)
 
-            insert_position = action.position
-            if insert_position is None or insert_position > len(ids):
-                insert_position = len(ids)
-            if insert_position < 0:
-                insert_position = 0
+            insert_position = clamp_position(action.position, len(ids))
 
             cursor = conn.execute(
                 "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
-                (int(action.columnId), action.title, action.details, insert_position),
+                (column_id, action.title, action.details, insert_position),
             )
-            card_id = int(cursor.lastrowid)
-            ids.insert(insert_position, card_id)
-            resequence_positions(conn, "cards", ids, "AND column_id = ?", (int(action.columnId),))
+            new_card_id = int(cursor.lastrowid)
+            ids.insert(insert_position, new_card_id)
+            resequence_positions(conn, "cards", ids, "AND column_id = ?", (column_id,))
             continue
 
         if isinstance(action, UpdateCardAction):
@@ -168,19 +184,19 @@ def apply_actions(
                 JOIN columns ON cards.column_id = columns.id
                 WHERE cards.id = ? AND columns.board_id = ?
                 """,
-                (int(action.cardId), board_id),
+                (card_id, board_id),
             ).fetchone()
             if not card_row:
                 continue
             if action.title is not None:
                 conn.execute(
                     "UPDATE cards SET title = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (action.title, int(action.cardId)),
+                    (action.title, card_id),
                 )
             if action.details is not None:
                 conn.execute(
                     "UPDATE cards SET details = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                    (action.details, int(action.cardId)),
+                    (action.details, card_id),
                 )
             continue
 
@@ -192,28 +208,27 @@ def apply_actions(
                 JOIN columns ON cards.column_id = columns.id
                 WHERE cards.id = ? AND columns.board_id = ?
                 """,
-                (int(action.cardId), board_id),
+                (card_id, board_id),
             ).fetchone()
             if not card:
                 continue
 
             target_column = conn.execute(
                 "SELECT id FROM columns WHERE id = ? AND board_id = ?",
-                (int(action.columnId), board_id),
+                (target_column_id, board_id),
             ).fetchone()
             if not target_column:
                 continue
 
             current_column_id = int(card["column_id"])
-            target_column_id = int(action.columnId)
 
             source_cards = conn.execute(
                 "SELECT id FROM cards WHERE column_id = ? AND archived = 0 ORDER BY position",
                 (current_column_id,),
             ).fetchall()
             source_ids = ordered_ids(source_cards)
-            if int(action.cardId) in source_ids:
-                source_ids.remove(int(action.cardId))
+            if card_id in source_ids:
+                source_ids.remove(card_id)
 
             target_cards = conn.execute(
                 "SELECT id FROM cards WHERE column_id = ? AND archived = 0 ORDER BY position",
@@ -221,17 +236,12 @@ def apply_actions(
             ).fetchall()
             target_ids = ordered_ids(target_cards)
 
-            insert_position = action.position
-            if insert_position is None or insert_position > len(target_ids):
-                insert_position = len(target_ids)
-            if insert_position < 0:
-                insert_position = 0
-
-            target_ids.insert(insert_position, int(action.cardId))
+            insert_position = clamp_position(action.position, len(target_ids))
+            target_ids.insert(insert_position, card_id)
 
             conn.execute(
                 "UPDATE cards SET column_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (target_column_id, int(action.cardId)),
+                (target_column_id, card_id),
             )
             resequence_positions(conn, "cards", source_ids, "AND column_id = ?", (current_column_id,))
             resequence_positions(conn, "cards", target_ids, "AND column_id = ?", (target_column_id,))
@@ -245,12 +255,12 @@ def apply_actions(
                 JOIN columns ON cards.column_id = columns.id
                 WHERE cards.id = ? AND columns.board_id = ?
                 """,
-                (int(action.cardId), board_id),
+                (card_id, board_id),
             ).fetchone()
             if not card:
                 continue
             column_id = int(card["column_id"])
-            conn.execute("DELETE FROM cards WHERE id = ?", (int(action.cardId),))
+            conn.execute("DELETE FROM cards WHERE id = ?", (card_id,))
             remaining = conn.execute(
                 "SELECT id FROM cards WHERE column_id = ? AND archived = 0 ORDER BY position",
                 (column_id,),

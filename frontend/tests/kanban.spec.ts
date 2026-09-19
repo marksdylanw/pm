@@ -52,3 +52,20 @@ test("moves a card between columns", async ({ page }) => {
   await page.mouse.up();
   await expect(targetColumn.getByText("Align roadmap themes")).toBeVisible();
 });
+
+test("edits a card", async ({ page }) => {
+  await login(page);
+  const card = page.locator("article", { hasText: "Align roadmap themes" }).first();
+  const testId = await card.getAttribute("data-testid");
+  await card.getByRole("button", { name: /edit align roadmap themes/i }).click();
+
+  // Re-locate by the stable data-testid: once editing starts, "Align roadmap
+  // themes" moves into an <input value>, which isn't part of textContent, so
+  // the hasText-filtered locator above would never resolve again.
+  const editingCard = page.locator(`[data-testid="${testId}"]`);
+  await editingCard.getByLabel("Card title").fill("Edited roadmap themes");
+  await editingCard.getByLabel("Card details").fill("Updated from e2e.");
+  await editingCard.getByRole("button", { name: /^save$/i }).click();
+  await expect(page.getByText("Edited roadmap themes")).toBeVisible();
+  await expect(page.getByText("Updated from e2e.")).toBeVisible();
+});

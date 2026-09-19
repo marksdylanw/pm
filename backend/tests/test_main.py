@@ -115,3 +115,18 @@ def test_static_fallback_404_without_index(tmp_path) -> None:
     response = client.get("/no-index")
     assert response.status_code == 404
     static_module.STATIC_DIR = original_static_dir
+
+
+def test_static_fallback_blocks_path_traversal(tmp_path) -> None:
+    original_static_dir = static_module.STATIC_DIR
+    static_dir = tmp_path / "static"
+    static_dir.mkdir()
+    (static_dir / "index.html").write_text("Index content")
+
+    secret_file = tmp_path / "secret.txt"
+    secret_file.write_text("top secret")
+
+    static_module.STATIC_DIR = static_dir
+    response = static_module.static_fallback("../secret.txt")
+    assert response.status_code == 404
+    static_module.STATIC_DIR = original_static_dir

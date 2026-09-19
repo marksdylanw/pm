@@ -3,6 +3,7 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException
 
 from app.database import (
+    clamp_position,
     fetch_board,
     get_or_create_board,
     get_or_create_user,
@@ -30,6 +31,10 @@ def create_column(
     username: str = Depends(get_username),
     conn: sqlite3.Connection = Depends(get_db),
 ) -> dict:
+    # Note: the current UI treats columns as fixed (rename-only) and the AI
+    # action schema has no create/delete-column action, so this route (and
+    # delete_column below) is only reachable via a direct API call today.
+    # Kept as intentional future-facing API surface rather than removed.
     user_id = get_or_create_user(conn, username)
     board_id = get_or_create_board(conn, user_id)
 
@@ -39,11 +44,7 @@ def create_column(
     ).fetchall()
     ids = ordered_ids(columns)
 
-    insert_position = payload.position
-    if insert_position is None or insert_position > len(ids):
-        insert_position = len(ids)
-    if insert_position < 0:
-        insert_position = 0
+    insert_position = clamp_position(payload.position, len(ids))
 
     cursor = conn.execute(
         "INSERT INTO columns (board_id, title, position) VALUES (?, ?, ?)",
@@ -88,7 +89,7 @@ def update_column(
         ids = ordered_ids(columns)
         if column_id in ids:
             ids.remove(column_id)
-        insert_position = max(0, min(payload.position, len(ids)))
+        insert_position = clamp_position(payload.position, len(ids))
         ids.insert(insert_position, column_id)
         resequence_positions(conn, "columns", ids, "AND board_id = ?", (board_id,))
 
@@ -96,6 +97,7 @@ def update_column(
     return {"status": "ok"}
 
 
+# See note on create_column above re: intentional unused-by-UI surface.
 @router.delete("/api/columns/{column_id}")
 def delete_column(
     column_id: int,
@@ -147,11 +149,7 @@ def create_card(
     ).fetchall()
     ids = ordered_ids(cards)
 
-    insert_position = payload.position
-    if insert_position is None or insert_position > len(ids):
-        insert_position = len(ids)
-    if insert_position < 0:
-        insert_position = 0
+    insert_position = clamp_position(payload.position, len(ids))
 
     cursor = conn.execute(
         "INSERT INTO cards (column_id, title, details, position) VALUES (?, ?, ?, ?)",
@@ -224,11 +222,7 @@ def update_card(
         ).fetchall()
         target_ids = ordered_ids(target_cards)
 
-        insert_position = payload.position
-        if insert_position is None or insert_position > len(target_ids):
-            insert_position = len(target_ids)
-        if insert_position < 0:
-            insert_position = 0
+        insert_position = clamp_position(payload.position, len(target_ids))
 
         target_ids.insert(insert_position, card_id)
 
